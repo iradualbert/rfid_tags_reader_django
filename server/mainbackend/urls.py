@@ -15,10 +15,16 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from background_task.models import Task, CompletedTask
+
 
 admin.site.site_header = "RFID READER"
 admin.site.site_title = "TAG MANAGER"
 admin.site.index_title = "Welcome To RFID TAG MANAGER"
+
+# unregister models
+admin.site.unregister(Task)
+admin.site.unregister(CompletedTask)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
