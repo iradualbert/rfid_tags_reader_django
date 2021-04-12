@@ -1,13 +1,16 @@
 from django.http import HttpResponse, JsonResponse
 from background_task import background
-from .reader.alien import read_tags
+from .reader.alien import TagReader
 from .models import Tag, Entry
 
 
 
-
-
 def index(request):
+    if 2 == 2:
+        print(locals())
+        import json
+        l = str(locals())
+        return JsonResponse({"locals": l})
     return HttpResponse('Scanning Tags')
 
 
@@ -27,6 +30,10 @@ def get_entries(request):
 
 @background(schedule=2)
 def start_rfid_reader():
-    read_tags()
-
+    try:
+        reader = TagReader()
+        reader.start()
+    except Exception as e:
+        print(e)
+        raise e
 start_rfid_reader()

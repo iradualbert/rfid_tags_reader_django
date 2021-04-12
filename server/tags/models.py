@@ -1,80 +1,151 @@
 from datetime import datetime
 from django.db import models
+from django.utils import timezone
 from django.contrib.auth.models import User
+
+def now():
+    return datetime.now(tz=timezone.utc)
+
+
+class Antenna(models.Model):
+    tag_id = models.CharField(max_length=40, unique=True)
+    no = models.PositiveIntegerField(unique=True)
+    name = models.CharField(max_length=10, null=True, blank=True, editable=False)
+    is_door = models.BooleanField(default=False)
+    
+    def save(self, *args, **kwargs):
+        self.name = f"Ant:{self.no}"        
+        return super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return self.name
+
+    @staticmethod
+    def get_all():
+        tags = {}
+        for x in Antenna.objects.all():
+            tags[x.tag_id] = x
+        return tags
+    
+    @staticmethod
+    def get_bag_antenna_names():
+        return set(x.name for x in Antenna.objects.filter(is_door=False))
+    
+
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    tag_id = models.CharField(max_length=40, unique=True)
+    onboard = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"{self.user.username}"
+
+    def add_tags(self, tags: list):
+        pass
+    
+    
+    @staticmethod
+    def get_all():
+        tags = {}
+        for x in Profile.objects.all():
+            tags[x.tag_id] = x
+        return tags
+    
+    def save(self, *args, **kwargs):
+        if Tag.objects.filter(tag_id=self.tag_id).exists() or Antenna.objects.filter(tag_id=self.tag_id).exists():
+            raise f"{self.tag_id} is not available"
+        return super().save(*args, **kwargs)
+        
+
+class Bag(models.Model):
+    name = models.CharField(max_length=40, unique=True)
+    antenna = models.OneToOneField(Antenna, on_delete=models.SET_NULL, null=True, related_name="bag", unique=True)
+    is_closed = models.BooleanField(default=True)
+    current_user = models.OneToOneField(Profile, null=True, blank=True, on_delete=models.SET_NULL)
+    
+    def __str__(self):
+        return f"{self.name}"
+    
+    @property
+    def total_tags(self):
+        return self.tags.all().count()
+    
+    @property
+    def missing_tags(self):
+        return self.tags.all().filter(is_taken=True)
+    
+    @property
+    def total_missing_tags(self):
+        return self.missing_tags.count()
+    
+    def open(self, person:Profile):
+        self.is_closed = False
+        self.current_user = person
+        person.onboard = True
+        person.save()
+        self.save()
+        
+        
+    def close(self, person:Profile):
+        self.is_closed = True
+        self.current_user = None
+        person.onboard = False
+        person.save()
+        self.save()
+
+    
 
 
 class Tag(models.Model):
-    tag_name = models.CharField(max_length=100, unique=True)
+    tag_id = models.CharField(max_length=40, unique=True)
+    bag = models.ForeignKey(Bag, on_delete=models.SET_NULL, null=True, related_name="tags")
     is_taken = models.BooleanField(default=False)
-    has_left = models.BooleanField(default=False)
-    last_time_taken = models.DateTimeField(null=True, blank=True)
-    last_time_left = models.DateTimeField(null=True, blank=True)
-    recent_user = models.ForeignKey(
-        User, null=True, on_delete=models.SET_NULL, blank=True
-    )
 
     def __str__(self):
-        return self.tag_name
+        return f"{self.tag_id} - {self.bag.name}"
+
+    @staticmethod
+    def get_all():
+        tags = {}
+        for x in Tag.objects.all():
+            tags[x.tag_id] = x
+        return tags
 
     def to_json(self):
-        return {
-            "tag_name": self.tag_name,
-            "tag_id": self.tag_name,
-            "is_taken": self.is_taken,
-            "has_left": self.has_left,
-        }
+        return {}
     
-    @property
-    def is_returning(self):
-        return self.has_left
-    
-    @property
-    def is_leaving(self):
-        if self.is_taken:
-            if self.has_left:
-                return False
-            return True
-        return False
-        # return (self.is_taken and not self.has_left)
-    
-    
+    def save(self, *args, **kwargs):
+        if Profile.objects.filter(tag_id=self.tag_id).exists() or Antenna.objects.filter(tag_id=self.tag_id).exists():
+            raise f"{self.tag_id} is not available"
+        super().save(*args, **kwargs)
+
 
 class Entry(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="entries")
-    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="entries")
-    antenna = models.CharField(max_length=30, null=True, blank=True)
-    registered_at = models.DateTimeField(default=datetime.utcnow)
+    user = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="entries")
+    taken_tags = models.ManyToManyField(Tag, blank=True)
+    bag = models.ForeignKey(Bag, on_delete=models.CASCADE)
+    registered_at = models.DateTimeField(default=now)
     left_at = models.DateTimeField(null=True, blank=True)
     returned_at = models.DateTimeField(null=True, blank=True)
+    reason = models.TextField(blank=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.tag.tag_name} - {self.antenna}"
-
-    def save(self, *args, **kwargs):
-        if not self.returned_at:
-            self.tag.is_taken = True
-            self.tag.recent_user = self.user
-            if self.left_at:
-                self.tag.has_left = True
-                self.tag.last_time_taken = self.registered_at
-                self.tag.last_time_left = self.left_at
-        if self.returned_at:
-            self.tag.is_taken = False
-            self.tag.has_left = False
-        self.tag.save()
-        return super().save(*args, **kwargs)
+        count = self.total_tags
+        return f"{self.registered_at} - {self.user} - {self.bag} - Total: {count}"
     
+    @property
+    def total_tags(self):
+        return self.taken_tags.all().count()
+    
+    @property
+    def taken(self):
+        return ", ".join([x.tag_id for x in self.taken_tags.all()])
+
     def delete(self):
         raise "An entry instance can not be deleted."
-    
+
     def get_user_json(self):
         return {"username": self.user.username}
 
     def to_json(self):
-        return {
-            "tag": self.tag.to_json(),
-            "user": self.get_user_json(),
-            "left_at": self.left_at,
-            "antenna": self.antenna,
-            "returned_at": self.returned_at,
-        }
+        return {}

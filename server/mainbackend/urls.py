@@ -23,8 +23,8 @@ admin.site.site_title = "TAG MANAGER"
 admin.site.index_title = "Welcome To RFID TAG MANAGER"
 
 # unregister models
-admin.site.unregister(Task)
-admin.site.unregister(CompletedTask)
+# admin.site.unregister(Task)
+# admin.site.unregister(CompletedTask)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

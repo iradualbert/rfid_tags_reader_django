@@ -1,127 +1,151 @@
 from threading import Timer
+import time
 import serial
-from datetime import date, datetime
-from django.core.exceptions import ObjectDoesNotExist
-from django.utils import timezone
-from ..models import Entry, Tag
+from ..models import Entry, Tag, Profile, Antenna
 
 
-# global state
-antenna_tags = ["Tag:3034 0BC9 E41C 3DC2 017A 6403", "Tag:1501 5010 0000 0000 0257 6463"]
-tags = {} # history
-is_running = False
+class TagReader(object):
+    user_tags = {'Tag:3500 0000 00FF 882E B4C3 BF6B'}
+    product_tags = {'Tag:3500 0000 00A0 10B4 DA50 078A', 'Tag:3500 0000 00A0 17BE C23F 4E9E'}
+    antenna_tags = ["Tag:3034 0BC9 E41C 3DC2 017A 6403", "Tag:1501 5010 0000 0000 0257 6463"]
+    bag_antenna_names = set()
 
+    def __init__(self):
+        self.history = {}
+        self.returned_history = {}
+        self.missing_tags = []
+        self.current_tags = set()
 
-def handle_detected_tag(tag_id: str, antenna, detected_at):
-    # print(tag_id, antenna)
-    try:
-        tag = Tag.objects.get(tag_name=tag_id) 
-        if not tag.is_leaving and not tag.is_returning:
-            print(f"{detected_at}: {tag_id} is detected on {antenna} but it is not associated with any movement")
-            return None  
-        try:
-            entry = Entry.objects.get(tag=tag, returned_at=None)
-            if tag.is_leaving:
-                # update tag info
-                tag.has_left = True
-                tag.last_time_left = detected_at
-                tag.recent_user = entry.user
-                # update entry
-                entry.antenna = antenna
-                entry.left_at = detected_at
-                print(f"{detected_at}: {tag_id} has left using {antenna}.")
-            elif tag.is_returning:
-                # update tag 
-                tag.has_left = False
-                tag.is_taken = False
-                # entry
-                entry.returned_at = detected_at
-                print(f"{detected_at}:{tag_id} has returned using {antenna}.")
-            
-            # update the database
-            tag.save()
-            entry.save()
-                
-        except Exception as e:
-            print(e)
-            raise e
-                       
-    except ObjectDoesNotExist:
-        print(f"{tag_id} is not recognized")
-        
-    except Exception as e:
-        raise e
+    def is_user(self, tag_id):
+        return tag_id in self.user_tags
+    def is_antenna(self, tag_id):
+        return tag_id in self.antenna_tags
+    def is_tag(self, tag_id):
+        return tag_id in self.tags
     
-        
-        
-def set_removal_time_from_history(tag_id, minutes=2):
-    seconds = minutes * 60
-    def remove_tag():
-        del tags[tag_id]
-    t = Timer(seconds, remove_tag)
-    t.start()
-
-
-def is_tag(text: str):
-    if not text.startswith("b'Tag") or not text.__contains__('Ant:'):
+    def should_ignore(self, tag):
+        if tag in self.history or tag in self.antenna_tags:
+            return True
         return False
-    return True
 
-def time_passed():
-    pass
+    def add_to_history(self, tag, **kwargs):
+        self.history[tag] = tag
+        self.set_removal_from_history(tag, **kwargs)
+
+    def _remove_from_history(self, tag):
+        del self.history[tag]
+
+    def set_removal_from_history(self, tag, minutes=1):
+        seconds = minutes * 60
+        t = Timer(seconds, self._remove_from_history, args=[tag,])
+        t.start()
 
 
-def parse_line(text: str):
-    text_list = text.split(',')
-    if len(text_list) < 4:
-        return None
-    id = text_list[0].replace("b'", '')
-    last_seen = text_list[2]
-    count = text_list[3]
-    return id, last_seen, count
-
-def read_tags():
-    print('Waiting for tags....')
-    cmd = "t" + '\r\n'
-    ser = serial.Serial("COM5", 115200)
-    while True:
-        ser.write(cmd.encode())
-        line = ser.readline()
-        # print("Undecoded: ", line)
-        line = line.strip().decode("utf-8")
-        # print("Decoded: ", line)
-        if not line or line.startswith("#") or line.startswith("\x00") or line.lower() == "(no tags)":
-            continue
-        try:
-            tag_info = line.split(',')
-            tag_id, antenna = tag_info[0], tag_info[4]
-            antenna = antenna.strip()
-            tag_id = tag_id.strip()
-            # check it an antenna itself
-            if tag_id in antenna_tags:
-                continue
-            if not tag_id in tags:
-                detected_at = datetime.now(tz=timezone.utc)
-                tags[tag_id] = {
-                    "antenna": antenna,
-                    "detected_at": detected_at
-                }
-                # call the function to handle the detected tag 
-                handle_detected_tag(tag_id, antenna, detected_at)
-                # remove the tag from detected tags after specified minutes
-                set_removal_time_from_history(tag_id)  
-        except IndexError:
-            continue
+    @classmethod
+    def update_data_from_db(cls):
+        cls.user_tags = Profile.get_all()
+        cls.tags = Tag.get_all()
+        cls.antenna_tags = Antenna.get_all()
+        cls.bag_antenna_names = Antenna.get_bag_antenna_names()
         
-        # except KeyboardInterrupt:
-        #     ser.close()
 
-def setTimeOut(seconds, callback):
-    s = Timer(seconds, callback)
-    s.start()
+    def start(self):
+        self.update_data_from_db()
+        self.read_all()
 
 
-     
-# if __name__ == '__main__':
-#     read_tags()
-#     pass
+    def read_all(self):
+        self.ser = serial.Serial("COM5", 115200)
+        while True:
+            # time.sleep(1)
+            cmd = "t" + '\r\n'
+            self.ser.write(cmd.encode())
+            buffer_string = self.ser.read(self.ser.inWaiting()).strip().decode("utf-8")
+            lines = buffer_string.splitlines()
+            if len(lines) == 0:
+                continue
+            else:
+                self.handle_lines(lines)
+
+
+    def handle_lines(self, lines):
+        current_tags = set()
+        current_users = set()
+        for line in lines:
+            try:
+                tag_info = line.split(',')
+                tag_id, antenna = tag_info[0], tag_info[4]
+                antenna_name = antenna.strip()
+                tag_id = tag_id.strip()
+                if self.should_ignore(tag_id):
+                    continue
+                # update current tags before handling the detected user
+                elif tag_id in self.tags:
+                    # make sure that the tag is detected by the bag antenna
+                    if antenna_name in self.bag_antenna_names:
+                        current_tags.add(tag_id)
+                elif tag_id in self.user_tags:
+                    current_users.add(f"{tag_id},{antenna_name}")
+            except IndexError:
+                continue
+            except Exception as e:
+                raise e
+        self.current_tags = current_tags
+        # update the returned tags
+        self.handle_returned_tags()
+        for user in current_users:
+            tag_id, antenna_name = user.split(",")
+            self.handle_user(tag_id, antenna_name)
+
+
+    def handle_returned_tags(self):
+        returned_tags = Tag.objects.filter(is_taken=True, tag_id__in=self.current_tags)
+        for tag in returned_tags:
+            tag.is_taken = False
+            print(f"{tag.tag_id} is returned!")
+            tag.save()
+
+    #
+    def handle_user(self, user_tag_id, antenna_name):
+        self.add_to_history(user_tag_id, minutes=0.05)
+        person = self.user_tags[user_tag_id]
+        antenna = Antenna.objects.get(name=antenna_name)
+        bag = antenna.bag
+        # check whether the antenna is a door or a bag antenna
+        if bag:
+            if not bag.is_closed  and bag.current_user != person:
+                print(f"{bag} not available now.")
+            elif bag.is_closed:
+                bag.open(person=person)
+                print(f"{person} has opened the {bag} bag.")
+            else:
+                bag.close(person=person)
+                taken_tags = self.get_taken_tags(bag)
+                taken_ids = ', '.join([x.tag_id for x in taken_tags]) 
+                entry = Entry(user=person, bag=bag)
+                entry.save()
+                for tag in taken_tags:
+                    tag.is_taken = True
+                    entry.taken_tags.add(tag)
+                    tag.save()
+                print(f"{person} has closed the {bag} bag.")
+                if taken_tags:
+                    print(f"{person} took {taken_ids}")
+
+        # Else if the user is detected at the door
+        # TO DO
+        else:
+            pass
+
+
+    # get taken bags
+    def get_taken_tags(self, bag):
+        bag_tags = Tag.objects.filter(bag=bag)
+        not_taken_tags = bag_tags.filter(is_taken=False)
+        # missing_tags = bag_tags.exclude(tag_id__in=self.current_tags)
+        taken_tags = not_taken_tags.exclude(tag_id__in=self.current_tags)
+        # print("All Missing: ", missing_tags)
+        # print("Taken:", taken_tags)
+        return taken_tags
+
+
