@@ -57,12 +57,13 @@ def read_all():
         waiting = ser.inWaiting()
         buffer_string = ser.read(waiting).strip().decode("utf-8")
         lines = buffer_string.splitlines()
+        print(buffer_string)
         if len(lines) == 0:
             continue
         else:
             missing_tags = parse_lines(lines)
-            for tag in missing_tags:
-                print(tag, "is missing")       
+            # for tag in missing_tags:
+            #     print(tag, "is missing")       
 
 if __name__ == "__main__":
     # scan_tags()

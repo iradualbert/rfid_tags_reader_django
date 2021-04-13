@@ -15,13 +15,6 @@ class TagReader(object):
         self.returned_history = {}
         self.missing_tags = []
         self.current_tags = set()
-
-    def is_user(self, tag_id):
-        return tag_id in self.user_tags
-    def is_antenna(self, tag_id):
-        return tag_id in self.antenna_tags
-    def is_tag(self, tag_id):
-        return tag_id in self.tags
     
     def should_ignore(self, tag):
         if tag in self.history or tag in self.antenna_tags:
@@ -57,7 +50,7 @@ class TagReader(object):
     def read_all(self):
         self.ser = serial.Serial("COM5", 115200)
         while True:
-            # time.sleep(1)
+            time.sleep(0.5)
             cmd = "t" + '\r\n'
             self.ser.write(cmd.encode())
             buffer_string = self.ser.read(self.ser.inWaiting()).strip().decode("utf-8")
@@ -71,19 +64,22 @@ class TagReader(object):
     def handle_lines(self, lines):
         current_tags = set()
         current_users = set()
+        # print("Lines", lines)
         for line in lines:
             try:
                 tag_info = line.split(',')
                 tag_id, antenna = tag_info[0], tag_info[4]
                 antenna_name = antenna.strip()
                 tag_id = tag_id.strip()
+                # current_tags.add(tag_id)
+                # print(tag_id)
                 if self.should_ignore(tag_id):
                     continue
                 # update current tags before handling the detected user
                 elif tag_id in self.tags:
                     # make sure that the tag is detected by the bag antenna
-                    if antenna_name in self.bag_antenna_names:
-                        current_tags.add(tag_id)
+                    # if antenna_name in self.bag_antenna_names:
+                    current_tags.add(tag_id)
                 elif tag_id in self.user_tags:
                     current_users.add(f"{tag_id},{antenna_name}")
             except IndexError:
@@ -91,6 +87,7 @@ class TagReader(object):
             except Exception as e:
                 raise e
         self.current_tags = current_tags
+        # print(current_tags)
         # update the returned tags
         self.handle_returned_tags()
         for user in current_users:
@@ -146,6 +143,7 @@ class TagReader(object):
         taken_tags = not_taken_tags.exclude(tag_id__in=self.current_tags)
         # print("All Missing: ", missing_tags)
         # print("Taken:", taken_tags)
+        # print("Available", self.current_tags)
         return taken_tags
 
 
