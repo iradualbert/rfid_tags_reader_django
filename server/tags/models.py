@@ -1,11 +1,18 @@
+from uuid import uuid4
+import random
 from datetime import datetime
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
 
+
 def now():
     return datetime.now(tz=timezone.utc)
 
+def generate_code(length=6):
+    n = "".join([str(random.randint(0, 9)) for p in range(0, length)])
+    return n
 
 class Antenna(models.Model):
     tag_id = models.CharField(max_length=40, unique=True)
@@ -33,13 +40,43 @@ class Antenna(models.Model):
     
 
 class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, unique=True)
     tag_id = models.CharField(max_length=40, unique=True)
     onboard = models.BooleanField(default=False)
-    
+    auth_token = models.UUIDField(default=uuid4, unique=True)
+    auth_key = models.CharField(default=generate_code, max_length=10)
+        
     def __str__(self):
         return f"{self.user.username}"
-
+    
+    @staticmethod
+    def authenticate(username, auth_key):
+        try:
+            user = User.objects.get(username=username)
+            profile = Profile.objects.get(user=user, auth_key=auth_key)
+            return profile
+        except ObjectDoesNotExist:
+            return None
+        
+    @staticmethod
+    def create_profile(user, tag_id=None):
+        profile = Profile.objects.create(
+            user=user,
+            tag_id=tag_id
+        )
+        return profile
+        
+    @staticmethod
+    def get_profile(auth_token):
+        try:
+            return Profile.objects.get(auth_token=auth_token)
+        except ObjectDoesNotExist:
+            pass
+        
+        except ValidationError:
+            pass
+        
+        return None
 
     
     @staticmethod
@@ -76,6 +113,13 @@ class Bag(models.Model):
     def total_missing_tags(self):
         return self.missing_tags.count()
     
+    
+    def to_json(self):
+        return {
+            "tags": [x.to_json() for x in self.tags.all()],
+            "missing_tags": [x.to_json() for x in self.missing_tags]
+        }
+    
     def open(self, person:Profile):
         self.is_closed = False
         self.current_user = person
@@ -96,8 +140,10 @@ class Bag(models.Model):
 
 class Tag(models.Model):
     tag_id = models.CharField(max_length=40, unique=True)
+    name = models.CharField(max_length=100, null=True)
     bag = models.ForeignKey(Bag, on_delete=models.SET_NULL, null=True, related_name="tags")
     is_taken = models.BooleanField(default=False)
+    
 
     def __str__(self):
         return f"{self.tag_id} - {self.bag.name}"
@@ -110,7 +156,11 @@ class Tag(models.Model):
         return tags
 
     def to_json(self):
-        return {}
+        return {
+            "tag_id": self.tag_id,
+            "name": self.name,
+            "is_taken": self.is_taken
+        }
     
     def save(self, *args, **kwargs):
         if Profile.objects.filter(tag_id=self.tag_id).exists() or Antenna.objects.filter(tag_id=self.tag_id).exists():
@@ -146,4 +196,8 @@ class Entry(models.Model):
         return {"username": self.user.username}
 
     def to_json(self):
-        return {}
+        return {
+            "taken": self.taken,
+            "total": self.total_tags,
+            "taken_at": self.registered_at
+        }
