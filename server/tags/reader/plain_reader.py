@@ -52,7 +52,7 @@ def parse_lines(lines):
 
 def read_all():
     while True:
-        time.sleep(1)
+        time.sleep(0.2)
         ser.write(cmd.encode())
         waiting = ser.inWaiting()
         buffer_string = ser.read(waiting).strip().decode("utf-8")

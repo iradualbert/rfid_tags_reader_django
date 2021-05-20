@@ -118,14 +118,14 @@ class TagReader(object):
             else:
                 bag.close(person=person)
                 taken_tags = self.get_taken_tags(bag)
-                taken_ids = ', '.join([x.tag_id for x in taken_tags]) 
+                taken_ids = ', '.join([x.name for x in taken_tags]) 
                 entry = Entry(user=person, bag=bag)
                 entry.save()
                 for tag in taken_tags:
                     tag.is_taken = True
                     entry.taken_tags.add(tag)
                     tag.save()
-                print(f"{person} has closed the {bag} bag.")
+                print(f"{person} has closed the  bag.")
                 if taken_tags:
                     print(f"{person} took {taken_ids}")
 

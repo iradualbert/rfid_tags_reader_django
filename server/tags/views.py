@@ -36,7 +36,7 @@ def get_entries(request):
     user = Profile.get_profile(auth_token)
     if user is None:
         return JsonResponse({'message': 'Invalid Token'}, status=400)
-    entries = Entry.objects.filter(user=user).order_by('registered_at')
+    entries = Entry.objects.filter(user=user).order_by('-registered_at')[0:10]
     return JsonResponse({
         "entries": [x.to_json() for x in entries]
     })

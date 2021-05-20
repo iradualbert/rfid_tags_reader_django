@@ -10,7 +10,6 @@ const Table = ({ tags }) => {
 				<tr>
 					<th>Name</th>
 					<th>ID</th>
-					<th />
 				</tr>
 			</thead>
 			<tbody>
@@ -33,19 +32,19 @@ function Dashboard({ bagInfo }) {
 	return (
 		<div className="row align-items-start">
 			<div className="card  text-white bg-success mb-4 col-md-5 m-auto">
-				<div className="card-header text-center">Total Tags</div>
+				<div className="card-header text-center">Tüm Takimleri</div>
 				<div className="card-body">
 					<h5 className="card-title text-center">
-						{total} {`Tag(s)`}
+						{total} {`Takim`}
 					</h5>
 					<Table tags={tags} />
 				</div>
 			</div>
 			<div className="card text-center text-white bg-danger mb-4 col-md-5 m-auto">
-				<div className="card-header">Missing Tags</div>
+				<div className="card-header">Eksik Takimleri</div>
 				<div className="card-body">
 					<h5 className="card-title">
-						{total_missing_tags} {`Tag(s)`}
+						{total_missing_tags} {`Takim`}
 					</h5>
 					<Table tags={missing_tags} />
 				</div>

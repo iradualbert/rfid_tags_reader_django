@@ -26,10 +26,10 @@ const Login = ({ setAuthToken, setUser }) => {
 	return (
 		<div className="col-md-6 m-auto">
 			<div className="card card-body mt-5">
-				<h2 className="text-center">Kullanıcı Giriş</h2>
+				<h2 className="text-center">Kullanıcı Girişi</h2>
 				<form onSubmit={handleSubmit}>
 					<div className="form-group">
-						<label>Username</label>
+						<label>Kullanıcı Adı</label>
 						<input
 							type="text"
 							className="form-control"
@@ -40,7 +40,7 @@ const Login = ({ setAuthToken, setUser }) => {
 					</div>
 
 					<div className="form-group">
-						<label>Auth Key</label>
+						<label>Kullanıcı Kodu</label>
 						<input
 							type="password"
 							className="form-control"
@@ -58,9 +58,9 @@ const Login = ({ setAuthToken, setUser }) => {
 						<button
 							type="submit"
 							disabled={isLoading || !(username && authKey)}
-							className="btn btn-primary"
+							className="btn btn-primary text-center"
 						>
-							Login
+							Giriş Yap
 						</button>
 					</div>
 				</form>

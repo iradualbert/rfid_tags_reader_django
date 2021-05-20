@@ -4,6 +4,7 @@ import "./App.css";
 import Login from "./components/Login";
 import DashBoard from "./components/Dashboard";
 import Entry from "./components/Entry";
+import History from "./components/History";
 
 const baseUrl = "http://127.0.0.1:8000/api";
 axios.defaults.baseURL = baseUrl;
@@ -11,9 +12,16 @@ axios.defaults.baseURL = baseUrl;
 const App = () => {
 	const [authToken, setAuthToken] = useState();
 	const [bagInfo, setBagInfo] = useState({});
-	const [user, setUser] = useState({ username: ""});
+	const [user, setUser] = useState({});
+	const [entries, setEntries] = useState([]);
 	const loadBagInfo = useRef();
 	const loadEntries = useRef();
+
+	const logout = () => {
+		setAuthToken(undefined);
+		setUser({});
+		setEntries([]);
+	}
 
 	loadBagInfo.current = async () => {
 		try {
@@ -25,14 +33,14 @@ const App = () => {
 	};
 
 	loadEntries.current = async () => {
-		// try {
-		// 	const { data } = await axios.get("/entries", {
-		// 		params: { auth_token: authToken },
-		// 	});
-		// 	setEntries(data);
-		// } catch (err) {
-		// 	console.log(err);
-		// }
+		try {
+			const { data } = await axios.get("/entries", {
+				params: { auth_token: authToken },
+			});
+			setEntries(data.entries);
+		} catch (err) {
+			console.log(err);
+		}
 	};
 
 	useEffect(() => {
@@ -52,13 +60,22 @@ const App = () => {
 		}
 	}, [authToken]);
 
-	// const notAuthenticated = !authToken;
+
+	const forAuthenticated = () => (
+		<>
+			<Entry user={user} logout={logout} />
+			<History entries={entries} />
+		</>
+	);
 
 	return (
 		<div className="container">
 			<DashBoard bagInfo={bagInfo} />
-			<Entry user={user}/>
-			<Login setAuthToken={setAuthToken} setUser={setUser} />
+			{authToken ? (
+				forAuthenticated()
+			) : (
+				<Login setAuthToken={setAuthToken} setUser={setUser} />
+			)}
 		</div>
 	);
 };

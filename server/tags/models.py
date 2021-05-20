@@ -187,7 +187,7 @@ class Entry(models.Model):
     
     @property
     def taken(self):
-        return ", ".join([x.tag_id for x in self.taken_tags.all()])
+        return ", ".join([x.name for x in self.taken_tags.all()])
 
     def delete(self):
         raise "An entry instance can not be deleted."
